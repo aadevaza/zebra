@@ -49,7 +49,6 @@ export default {
       if (isTablet.value) return itemsPerPageTablet;
       return itemsPerPageDesktop;
     });
-    const totalItems = ref(0);
     const loading = ref(false);
 
     const updateIsTablet = () => {
@@ -60,29 +59,30 @@ export default {
     window.addEventListener('resize', updateIsTablet);
 
     const displayedNews = computed(() => {
-      const startIndex = (currentPage.value - 1) * itemsPerPage.value;
-      const endIndex = startIndex + itemsPerPage.value;
-      return newsList.value.slice(0, endIndex);
+      const startIndex = 0;
+      const endIndex = currentPage.value * itemsPerPage.value;
+      return newsList.value.slice(startIndex, endIndex);
     });
 
-    const hasMoreNews = computed(() => currentPage.value * itemsPerPage.value < totalItems.value);
+    const hasMoreNews = computed(() => displayedNews.value.length < newsList.value.length);
 
-    async function loadNews(page) {
+    async function fetchAllNews() {
+      loading.value = true;
       try {
-        loading.value = true;
-        const responses = await Promise.all([
-          axios.get(`https://flems.github.io/test/api/news/${page}`),
-          axios.get(`https://flems.github.io/test/api/news/${page + 1}`),
-        ]);
+        const { data } = await axios.get('https://flems.github.io/test/api/news/');
+        const totalPages = data.nav.total;
+        const pageRequests = [];
+
+        for (let page = 1; page <= totalPages; page++) {
+          pageRequests.push(axios.get(`https://flems.github.io/test/api/news/${page}`));
+        }
+
+        const responses = await Promise.all(pageRequests);
         responses.forEach((response) => {
-          const newsListResponse = response.data;
-          if (newsListResponse.items.length > 0) {
-            newsList.value = [...newsList.value, ...newsListResponse.items];
-            totalItems.value += newsListResponse.items.length;
-          }
+          newsList.value.push(...response.data.items);
         });
       } catch (error) {
-        console.error(error.message);
+        console.error("Failed to fetch news:", error);
       } finally {
         loading.value = false;
       }
@@ -90,11 +90,10 @@ export default {
 
     async function loadMore() {
       currentPage.value++;
-      await loadNews(currentPage.value);
     }
 
     onMounted(async () => {
-      await loadNews(currentPage.value);
+      await fetchAllNews();
     });
 
     return {
